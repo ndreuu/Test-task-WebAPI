@@ -56,14 +56,21 @@ public class Utils
                 
                 if (fields != null && fields.Length == Constants.FIELD_NUM)
                 {
-                    var inputString =  new InputString
+                    try
                     {
-                        Date = DateTime.ParseExact(fields[0], Constants.CSV_DATE_INPUT_FRMT, CultureInfo.InvariantCulture), 
-                        Time = Convert.ToUInt64(fields[1]), 
-                        Index = Convert.ToDouble(fields[2].Replace(',', '.'))
-                    };
-
-                    addValidString(inputString, inputFields);
+                        var inputString =  new InputString
+                        {
+                            Date = DateTime.ParseExact(fields[0], Constants.CSV_DATE_INPUT_FRMT, CultureInfo.InvariantCulture), 
+                            Time = Convert.ToUInt64(fields[1]), 
+                            Index = Convert.ToDouble(fields[2].Replace(',', '.'))
+                        };
+                        
+                        addValidString(inputString, inputFields);
+                    }
+                    catch (Exception _)
+                    {
+                        throw new Exception("Wrong string format");
+                    }
                 }
             }
             

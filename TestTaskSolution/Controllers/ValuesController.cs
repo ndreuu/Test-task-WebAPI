@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TestTaskSolution.Data;
@@ -19,22 +20,10 @@ public class ValuesController : Controller
         this.dbContext = dbContext;
     }
     
-    [HttpGet("GetValues")]
-    public async Task<IActionResult> GetValues()
-    {
-        return Ok(await dbContext.Values.ToListAsync());
-    }
-
-    [HttpGet("GetResults")]
-    public async Task<IActionResult> GetResults()
-    {
-        return Ok(await dbContext.Result.ToListAsync());
-    }
-    
     [HttpGet("GetResultByFileName")]
     public async Task<IActionResult> GetResultByFileName(string fileName)
     {
-        var results = await dbContext.Result.Where(v => v.FileName == fileName).ToArrayAsync();
+        var results = await dbContext.Results.Where(v => v.FileName == fileName).ToArrayAsync();
 
         if (results.Length > 0)
         {
@@ -59,7 +48,7 @@ public class ValuesController : Controller
     [HttpGet("GetResultsByDateFirstOperation")]
     public async Task<IActionResult> GetResultsByDateFirstOperation(DateTime from, DateTime to)
     {
-        var results = await dbContext.Result.Where(v => 
+        var results = await dbContext.Results.Where(v => 
             v.DateFirstOperation.CompareTo(to) <= 0 && 
             v.DateFirstOperation.CompareTo(from) >= 0).ToArrayAsync();
     
@@ -88,7 +77,7 @@ public class ValuesController : Controller
     [HttpGet("GetResultsByAvarageIndex")]
     public async Task<IActionResult> GetResultsByAvarageIndex(double from, double to)
     {
-        var results = await dbContext.Result.Where(v => 
+        var results = await dbContext.Results.Where(v => 
             v.AvarageIndex.CompareTo(to) <= 0 && 
             v.AvarageIndex.CompareTo(from) >= 0).ToArrayAsync();
     
@@ -117,7 +106,7 @@ public class ValuesController : Controller
     [HttpGet("GetResultsByAvarageTime")]
     public async Task<IActionResult> GetResultsByAvarageTime(double from, double to)
     {
-        var results = await dbContext.Result.Where(v => 
+        var results = await dbContext.Results.Where(v => 
             v.AvarageTime <= to && 
             v.AvarageTime >= from).ToArrayAsync();
     
@@ -168,61 +157,66 @@ public class ValuesController : Controller
     [HttpPost("Upload")]
     public async Task<IActionResult> Upload(IFormFile file)
     {
-        var fileName = file.FileName;
-        
-        if (Path.GetExtension(fileName) != Constants.DOT_CSV)
+        if (Path.GetExtension(file.FileName) != Constants.DOT_CSV)
         {
             throw new Exception("Expected *.csv file");
         }
         
-        var existingValues = dbContext.Values.Where(v => v.FileName == fileName).ToArray();
+        var existingValues = dbContext.Values.Where(v => v.FileName == file.FileName).ToArray();
         
         if (existingValues.Length > 0)
         {
             var existingValue = existingValues[0];
-            var existingResult = dbContext.Result.Where(r => r.FileName == existingValues[0].FileName).ToArray()[0];
+            var existingResult = dbContext.Results.Where(r => r.FileName == existingValues[0].FileName).ToArray()[0];
             
             dbContext.Remove(existingValue);    
             dbContext.Remove(existingResult);
             
             await dbContext.SaveChangesAsync();
         }
-        
-        var strings = Utils.parse(file.OpenReadStream());
 
-        var values = strings.ConvertAll<Value>(s => 
-            new Value
-            {
-                Id = Guid.NewGuid(),
-                FileName = fileName,
-                Date = s.Date,
-                Index = s.Index,
-                Time = s.Time
-            });
-        
-        if (values.Count > 0)
+        try
         {
-            var result = new Result
+            var strings = Utils.parse(file.OpenReadStream());
+
+            var values = strings.ConvertAll<Value>(s =>
+                new Value
+                {
+                    Id = Guid.NewGuid(),
+                    FileName = file.FileName,
+                    Date = s.Date,
+                    Index = s.Index,
+                    Time = s.Time
+                });
+
+            if (values.Count > 0)
             {
-                Id = Guid.NewGuid(),
-                FileName = fileName, 
-                AvarageIndex = strings.ConvertAll(s => s.Index).Average(),
-                AvarageTime = strings.ConvertAll(s => (double)s.Time).Average(),
-                DeltaTime = strings.ConvertAll(s => s.Time).Max() - strings.ConvertAll(s => s.Time).Min(),
-                MaxIndex = strings.ConvertAll(s => s.Index).Max(),
-                MedianIndex = Utils.GetMedian(strings.ConvertAll(s => s.Index).ToArray()),
-                MinIndex = strings.ConvertAll(s => s.Index).Min(),
-                CountOfRecords = strings.Count,
-                DateFirstOperation = strings.ConvertAll(s => s.Date).Min()
-            };
+                var result = new Result
+                {
+                    Id = Guid.NewGuid(),
+                    FileName = file.FileName,
+                    AvarageIndex = strings.ConvertAll(s => s.Index).Average(),
+                    AvarageTime = strings.ConvertAll(s => (double)s.Time).Average(),
+                    DeltaTime = strings.ConvertAll(s => s.Time).Max() - strings.ConvertAll(s => s.Time).Min(),
+                    MaxIndex = strings.ConvertAll(s => s.Index).Max(),
+                    MedianIndex = Utils.GetMedian(strings.ConvertAll(s => s.Index).ToArray()),
+                    MinIndex = strings.ConvertAll(s => s.Index).Min(),
+                    CountOfRecords = strings.Count,
+                    DateFirstOperation = strings.ConvertAll(s => s.Date).Min()
+                };
 
-            await dbContext.Result.AddAsync(result);
+                await dbContext.Results.AddAsync(result);
+                await dbContext.Values.AddRangeAsync(values);
+                await dbContext.SaveChangesAsync();
+
+                return Ok(values);
+            }
         }
-        
-        await dbContext.Values.AddRangeAsync(values);
-        await dbContext.SaveChangesAsync();
-        
-        return Ok(values);
-    }
+        catch (Exception e)
+        {
+            throw new HttpRequestException(e.Message); 
+        }
 
+        throw new HttpRequestException();
+    }
 }
